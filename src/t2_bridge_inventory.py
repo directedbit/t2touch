@@ -63,6 +63,16 @@ def require_preparation_service_events(
                     and len(event.payload) == 22
                 )
             elif (
+                event.envelope_type
+                == enrollment_protocol.SERVICE_SENSOR_RECOVERY_REASON
+                and event.version == 1
+            ):
+                # Exact macOS logs the reason and returns without changing
+                # operation state or issuing a command (FINDINGS D183/D184).
+                # MacBookPro15,2 queues these before the first Mesa command.
+                enrollment_protocol.validate_status_payload(event)
+                accepted = True
+            elif (
                 event.envelope_type == enrollment_protocol.SERVICE_STATUS
                 and event.version in (1, 2)
                 and (

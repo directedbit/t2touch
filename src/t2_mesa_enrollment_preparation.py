@@ -90,7 +90,10 @@ def _require_calibration_service_events(events: object) -> None:
             )
         try:
             event = enrollment_protocol.parse_service_event(value[2])
-            if event.envelope_type == enrollment_protocol.SERVICE_SKS_LOCK_STATE:
+            if event.envelope_type in (
+                enrollment_protocol.SERVICE_SKS_LOCK_STATE,
+                enrollment_protocol.SERVICE_SENSOR_RECOVERY_REASON,
+            ):
                 t2_bridge_inventory.require_preparation_service_events([value])
                 continue
             enrollment_protocol.validate_status_payload(event)

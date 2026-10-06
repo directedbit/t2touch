@@ -56,6 +56,16 @@ def status_event(ordinal: int, detail: bytes = b"") -> list[object]:
     return [9, enrollment_protocol.BRIDGE_SERVICE_STATUS, data, 0, 0]
 
 
+def recovery_event(reason: int, *, version: int = 1) -> list[object]:
+    data = (
+        enrollment_protocol.SERVICE_HEADER.pack(
+            0, enrollment_protocol.SERVICE_SENSOR_RECOVERY_REASON, version, 123
+        )
+        + enrollment_protocol.STATUS_PAYLOAD_HEADER.pack(reason, 0)
+    )
+    return [9, enrollment_protocol.BRIDGE_SERVICE_STATUS, data, 0, 0]
+
+
 class FakeLease:
     def __init__(self, replies, *, events=None):
         self.connection_generation = "generation"
@@ -273,6 +283,55 @@ class MesaEnrollmentPreparationTests(unittest.TestCase):
             preparation.prepare_empty_user_for_enrollment(lease, USER)
 
         self.assertTrue(lease.invalidated)
+
+    def test_queued_sensor_recovery_reasons_are_ambient(self):
+        lease = self.ready_lease()
+        lease.events = [[recovery_event(5), recovery_event(5)]]
+
+        result = preparation.prepare_empty_user_for_enrollment(lease, USER)
+
+        self.assertEqual(result.identity_count, 0)
+        self.assertFalse(lease.invalidated)
+
+    def test_unsupported_sensor_recovery_version_is_rejected(self):
+        lease = self.ready_lease()
+        lease.events = [[recovery_event(5, version=2)]]
+
+        with self.assertRaisesRegex(
+            preparation.MesaEnrollmentPreparationError,
+            "sensor-readiness read emitted an unexpected service event",
+        ):
+            preparation.prepare_empty_user_for_enrollment(lease, USER)
+
+        self.assertTrue(lease.invalidated)
+
+    def test_calibration_admits_sensor_recovery_reason(self):
+        lease = FakeLease(
+            [
+                b"\x01",
+                b"",
+                bytes(12),
+                daemon_info(calibrated=0),
+                b"",
+                daemon_info(),
+                b"",
+                b"",
+                daemon_info(),
+                states(),
+                b"",
+                daemon_info(),
+                states(),
+                system_policy(),
+                user_policy(),
+            ],
+            events=[[], [], [], [], [recovery_event(5)]],
+        )
+        lease.bridge_replies = [[b"calibration"]]
+
+        result = preparation.prepare_empty_user_for_enrollment(lease, USER)
+
+        self.assertTrue(result.calibration_loaded)
+        self.assertFalse(lease.invalidated)
 
     def test_calibration_rejects_wrong_status_detail_length(self):
         lease = FakeLease(
